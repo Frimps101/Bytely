@@ -1,0 +1,144 @@
+import prisma from "../lib/connectDb.js";
+
+export const getPosts = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const { category, author, search, isFeatured, sort } = req.query;
+
+        const where = {};
+
+        if (category) where.category = category;
+
+        if (author) {
+            const user = await prisma.user.findUnique({ where: { username: author } });
+            if (!user) return res.status(404).json("User not found!");
+            where.userId = user.id;
+        }
+
+        if (search) where.title = { contains: search, mode: "insensitive" };
+
+        if (isFeatured) where.isFeatured = true;
+
+        let orderBy = { createdAt: "desc" };
+
+        if (sort) {
+            switch (sort) {
+                case "newest":  orderBy = { createdAt: "desc" }; break;
+                case "oldest":  orderBy = { createdAt: "asc" };  break;
+                case "popular": orderBy = { visit: "desc" };     break;
+                case "trending":
+                    orderBy = { visit: "desc" };
+                    where.createdAt = {
+                        gte: new Date(new Date().getTime() - 7 * 24 * 60 * 60 * 1000),
+                    };
+                    break;
+            }
+        }
+
+        const posts = await prisma.post.findMany({
+            where,
+            orderBy,
+            take: parseInt(limit),
+            skip: (parseInt(page) - 1) * parseInt(limit),
+            include: { user: { select: { username: true } } },
+        });
+
+        const totalPosts = await prisma.post.count();
+        const hasMore = page * limit < totalPosts;
+
+        res.status(200).json({ posts, hasMore });
+
+    } catch (error) {
+        return res.status(500).json(error.message);
+    }
+}
+
+export const getPost = async (req, res) => {
+    try {
+        const post = await prisma.post.findUnique({
+            where: { slug: req.params.slug },
+            include: { user: { select: { username: true, img: true } } },
+        });
+        if (!post) return res.status(404).json("Post not found!");
+        res.status(200).json(post);
+    } catch (error) {
+        return res.status(500).json(error.message);
+    }
+}
+
+export const createPost = async (req, res) => {
+    try {
+        const clerkUserId = req.auth.userId;
+        if (!clerkUserId) return res.status(401).json("Not authenticated!");
+
+        const user = await prisma.user.findUnique({ where: { clerkUserId } });
+        if (!user) return res.status(404).json("User not found!");
+
+        let slug = req.body.title.replace(/ /g, "-").toLowerCase();
+        let existingPost = await prisma.post.findUnique({ where: { slug } });
+        let counter = 2;
+        while (existingPost) {
+            slug = `${slug}-${counter}`;
+            existingPost = await prisma.post.findUnique({ where: { slug } });
+            counter++;
+        }
+
+        const post = await prisma.post.create({
+            data: { ...req.body, slug, userId: user.id },
+        });
+
+        res.status(201).json(post);
+    } catch (error) {
+        return res.status(500).json(error.message);
+    }
+}
+
+export const deletePost = async (req, res) => {
+    try {
+        const clerkUserId = req.auth.userId;
+        if (!clerkUserId) return res.status(401).json("Not authenticated!");
+
+        const role = req.auth.sessionClaims?.metadata?.role || "user";
+        const user = await prisma.user.findUnique({ where: { clerkUserId } });
+
+        if (role === "admin") {
+            await prisma.post.delete({ where: { id: parseInt(req.params.id) } });
+            return res.status(200).json("Post deleted successfully!");
+        }
+
+        const deleted = await prisma.post.deleteMany({
+            where: { id: parseInt(req.params.id), userId: user.id },
+        });
+
+        if (deleted.count === 0) return res.status(403).json("You can delete only your post!");
+        res.status(200).json("Post deleted successfully!");
+    } catch (error) {
+        return res.status(500).json(error.message);
+    }
+}
+
+export const featurePost = async (req, res) => {
+    try {
+        const clerkUserId = req.auth.userId;
+        if (!clerkUserId) return res.status(401).json("Not authenticated!");
+
+        const role = req.auth.sessionClaims?.metadata?.role || "user";
+        if (role !== "admin") return res.status(403).json("Only admins can feature posts!");
+
+        const post = await prisma.post.findUnique({ where: { id: parseInt(req.body.postId) } });
+        if (!post) return res.status(404).json("Post not found!");
+
+        const updated = await prisma.post.update({
+            where: { id: post.id },
+            data: { isFeatured: !post.isFeatured },
+        });
+
+        res.status(200).json(updated);
+    } catch (error) {
+        return res.status(500).json(error.message);
+    }
+}
+
+export const uploadAuth = async (req, res) => {
+    res.status(501).json("Upload not configured!");
+}
