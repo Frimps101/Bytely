@@ -9,7 +9,7 @@ const Navbar = () => {
     <div className="w-full h-16 md:h-16 flex items-center justify-between">
       {/* LOGO */}
       <Link to="/" className="flex items-center gap-4 text-2xl font-bold">
-        <img src="logo.png" alt="Lama Logo" w={32} h={32} />
+        <img src="logo.png" alt="" w={32} h={32} />
         <span>bytely</span>
       </Link>
       {/* MOBILE MENU */}
