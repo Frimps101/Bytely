@@ -1,4 +1,6 @@
+import { getAuth } from "@clerk/express";
 import prisma from "../lib/connectDb.js";
+import { getCurrentUser } from "../lib/getCurrentUser.js";
 
 export const getPostComments = async (req, res) => {
     try {
@@ -16,15 +18,11 @@ export const getPostComments = async (req, res) => {
 
 export const addComment = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
-
-        if (!clerkUserId) return res.status(401).json("Not authenticated!");
-
         const postId = parseInt(req.params.postId);
         if (!postId) return res.status(400).json("Post ID is required!");
 
-        const user = await prisma.user.findUnique({ where: { clerkUserId } });
-        if (!user) return res.status(404).json("User not found!");
+        const user = await getCurrentUser(req);
+        if (!user) return res.status(401).json("Not authenticated!");
 
         const comment = await prisma.comment.create({
             data: {
@@ -42,13 +40,13 @@ export const addComment = async (req, res) => {
 
 export const deleteComment = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
+        const { userId: clerkUserId, sessionClaims } = getAuth(req);
         const commentId = parseInt(req.params.id);
 
         if (!clerkUserId) return res.status(401).json("Not authenticated!");
         if (!commentId) return res.status(400).json("Comment ID is required!");
 
-        const role = req.auth.sessionClaims?.metadata?.role || "user";
+        const role = sessionClaims?.metadata?.role || "user";
 
         if (role === "admin") {
             await prisma.comment.delete({ where: { id: commentId } });
@@ -70,13 +68,13 @@ export const deleteComment = async (req, res) => {
 
 export const updateComment = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
+        const { userId: clerkUserId, sessionClaims } = getAuth(req);
         const commentId = parseInt(req.params.id);
 
         if (!clerkUserId) return res.status(401).json("Not authenticated!");
         if (!commentId) return res.status(400).json("Comment ID is required!");
 
-        const role = req.auth.sessionClaims?.metadata?.role || "user";
+        const role = sessionClaims?.metadata?.role || "user";
 
         if (role === "admin") {
             const updated = await prisma.comment.update({ where: { id: commentId }, data: req.body });

@@ -1,4 +1,6 @@
+import { getAuth } from "@clerk/express";
 import prisma from "../lib/connectDb.js";
+import { getCurrentUser } from "../lib/getCurrentUser.js";
 
 export const getPosts = async (req, res) => {
     try {
@@ -68,11 +70,10 @@ export const getPost = async (req, res) => {
 
 export const createPost = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
-        if (!clerkUserId) return res.status(401).json("Not authenticated!");
+        const user = await getCurrentUser(req);
+        if (!user) return res.status(401).json("Not authenticated!");
 
-        const user = await prisma.user.findUnique({ where: { clerkUserId } });
-        if (!user) return res.status(404).json("User not found!");
+        if (!req.body.title) return res.status(400).json("Title is required!");
 
         let slug = req.body.title.replace(/ /g, "-").toLowerCase();
         let existingPost = await prisma.post.findUnique({ where: { slug } });
@@ -83,8 +84,18 @@ export const createPost = async (req, res) => {
             counter++;
         }
 
+        const body = req.body.desc ?? "";
+
         const post = await prisma.post.create({
-            data: { ...req.body, slug, userId: user.id },
+            data: {
+                title: req.body.title,
+                desc: body,
+                content: body,
+                category: req.body.category || "general",
+                img: req.body.img || null,
+                slug,
+                userId: user.id,
+            },
         });
 
         res.status(201).json(post);
@@ -95,10 +106,10 @@ export const createPost = async (req, res) => {
 
 export const deletePost = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
+        const { userId: clerkUserId, sessionClaims } = getAuth(req);
         if (!clerkUserId) return res.status(401).json("Not authenticated!");
 
-        const role = req.auth.sessionClaims?.metadata?.role || "user";
+        const role = sessionClaims?.metadata?.role || "user";
         const user = await prisma.user.findUnique({ where: { clerkUserId } });
 
         if (role === "admin") {
@@ -117,12 +128,51 @@ export const deletePost = async (req, res) => {
     }
 }
 
-export const featurePost = async (req, res) => {
+export const updatePost = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
+        const { userId: clerkUserId, sessionClaims } = getAuth(req);
         if (!clerkUserId) return res.status(401).json("Not authenticated!");
 
-        const role = req.auth.sessionClaims?.metadata?.role || "user";
+        const postId = parseInt(req.params.id);
+        if (!postId) return res.status(400).json("Post ID is required!");
+
+        const post = await prisma.post.findUnique({ where: { id: postId } });
+        if (!post) return res.status(404).json("Post not found!");
+
+        const role = sessionClaims?.metadata?.role || "user";
+        const user = await prisma.user.findUnique({ where: { clerkUserId } });
+        if (!user) return res.status(404).json("User not found!");
+
+        if (role !== "admin" && post.userId !== user.id) {
+            return res.status(403).json("You can edit only your post!");
+        }
+
+        const data = {};
+        if (req.body.title !== undefined) data.title = req.body.title;
+        if (req.body.category !== undefined) data.category = req.body.category || "general";
+        if (req.body.img !== undefined) data.img = req.body.img || null;
+        if (req.body.desc !== undefined) {
+            data.desc = req.body.desc;
+            data.content = req.body.desc;
+        }
+
+        const updated = await prisma.post.update({
+            where: { id: postId },
+            data,
+        });
+
+        res.status(200).json(updated);
+    } catch (error) {
+        return res.status(500).json(error.message);
+    }
+}
+
+export const featurePost = async (req, res) => {
+    try {
+        const { userId: clerkUserId, sessionClaims } = getAuth(req);
+        if (!clerkUserId) return res.status(401).json("Not authenticated!");
+
+        const role = sessionClaims?.metadata?.role || "user";
         if (role !== "admin") return res.status(403).json("Only admins can feature posts!");
 
         const post = await prisma.post.findUnique({ where: { id: parseInt(req.body.postId) } });

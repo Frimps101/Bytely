@@ -1,18 +1,10 @@
 import prisma from "../lib/connectDb.js";
+import { getCurrentUser } from "../lib/getCurrentUser.js";
 
 export const getUserSavedPosts = async (req, res) => {
-    const clerkUserId = req.auth.userId;
-
-    if (!clerkUserId) {
-        return res.status(401).json("Not authenticated!");
-    }
-
     try {
-        const user = await prisma.user.findUnique({
-            where: {
-                clerkUserId: clerkUserId
-            }
-        })
+        const user = await getCurrentUser(req);
+        if (!user) return res.status(401).json("Not authenticated!");
 
         return res.status(200).json(user.savedPosts);
     } catch (error) {
@@ -22,25 +14,14 @@ export const getUserSavedPosts = async (req, res) => {
 
 export const savePost = async (req, res) => {
     try {
-        const clerkUserId = req.auth.userId;
         const postId = req.body.postId;
-
-        if (!clerkUserId) {
-            return res.status(401).json("Not authenticated!");
-        }
-
         if (!postId) {
             return res.status(400).json("Post ID is required!");
         }
 
-        const user = await prisma.user.findUnique({
-            where: {
-                clerkUserId: clerkUserId
-            }
-        })
-        
+        const user = await getCurrentUser(req);
         if (!user) {
-            return res.status(404).json("User not found!");
+            return res.status(401).json("Not authenticated!");
         }
 
         const savedPosts = user.savedPosts;
@@ -53,7 +34,7 @@ export const savePost = async (req, res) => {
         savedPosts.push(postId);
         await prisma.user.update({
             where: {
-                clerkUserId: clerkUserId
+                id: user.id
             },
             data: {
                 savedPosts: savedPosts

@@ -4,7 +4,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { SignedIn, SignedOut, useAuth, useUser } from "@clerk/clerk-react";
 import FeaturedPost from "../components/FeaturedPost";
 import ArticleCard, { SidePost } from "../components/ArticleCard";
-import { fetchPosts, fetchMyPosts, fetchSavedPosts } from "../lib/api";
+import { fetchPosts, fetchMyPosts, fetchSavedPosts, toCardPost } from "../lib/api";
 
 const PER_PAGE = 10;
 
@@ -135,15 +135,7 @@ const MyPostsTab = ({ token, username }) => {
   return (
     <div className="mt-8 flex flex-col gap-8">
       {posts.map((post) => (
-        <ArticleCard key={post.id} post={{
-          slug: post.slug,
-          title: post.title,
-          category: post.category,
-          timeAgo: new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-          author: username,
-          excerpt: post.desc?.replace(/<[^>]*>/g, "").slice(0, 160),
-          img: post.img,
-        }} />
+        <ArticleCard key={post.id} post={{ ...toCardPost(post), author: post.user?.username ?? username }} />
       ))}
     </div>
   );
@@ -223,7 +215,7 @@ const PublicFeed = () => {
     staleTime: 1000 * 60 * 2,
   });
 
-  const articles = data?.pages.flat() ?? [];
+  const articles = (data?.pages.flat() ?? []).map(toCardPost);
   const featured  = articles[0];
   const sidePosts = articles.slice(1, 6);
   const recent    = articles.slice(6);
@@ -284,7 +276,7 @@ const PublicFeed = () => {
     <div className="space-y-10">
       <div className="flex flex-col md:flex-row gap-4">
         <div className="md:flex-1"><FeaturedPost post={featured} /></div>
-        <div className="md:w-80 lg:w-100 flex flex-col gap-5 justify-between">
+        <div className="md:w-80 lg:w-100 flex flex-col gap-5 justify-start">
           {sidePosts.map((post, idx) => (
             <SidePost key={post.slug} post={post} number={idx + 2} />
           ))}

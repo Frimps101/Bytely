@@ -1,18 +1,39 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
-import { createPost } from "../lib/api";
+import { createPost, updatePost, fetchPost } from "../lib/api";
 
 const CATEGORIES = ["Web Design", "Development", "Databases", "Search Engines", "Marketing"];
 
 const WritePostPage = () => {
   const navigate  = useNavigate();
+  const { slug }  = useParams();
+  const isEdit    = !!slug;
   const { getToken } = useAuth();
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({ title: "", category: "", desc: "", img: "" });
   const [error, setError] = useState("");
+
+  /* In edit mode, load the existing post and prefill the form */
+  const { data: existing, isLoading: loadingPost } = useQuery({
+    queryKey: ["post", slug],
+    queryFn: () => fetchPost(slug),
+    enabled: isEdit,
+  });
+
+  useEffect(() => {
+    if (existing) {
+      setForm({
+        title: existing.title ?? "",
+        category: existing.category ?? "",
+        desc: existing.desc ?? "",
+        img: existing.img ?? "",
+      });
+    }
+  }, [existing]);
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -21,9 +42,17 @@ const WritePostPage = () => {
   const { mutate: publish, isPending } = useMutation({
     mutationFn: async () => {
       const token = await getToken();
+      if (isEdit) {
+        return updatePost({ id: existing.id, data: form, token });
+      }
       return createPost({ data: form, token });
     },
-    onSuccess: (post) => navigate(`/post/${post.slug}`),
+    onSuccess: (post) => {
+      queryClient.invalidateQueries({ queryKey: ["post", post.slug] });
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+      queryClient.invalidateQueries({ queryKey: ["my-posts"] });
+      navigate(`/post/${post.slug}`);
+    },
     onError: (err) => setError(err.message || "Something went wrong. Try again."),
   });
 
@@ -37,13 +66,21 @@ const WritePostPage = () => {
     publish();
   };
 
+  if (isEdit && loadingPost) return (
+    <div className="pt-16 flex justify-center">
+      <div className="w-8 h-8 border-4 border-[#126ef5] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
   return (
     <div className="pt-10 pb-16 space-y-8">
 
       {/* HEADER */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Write a Post</h1>
-        <p className="text-sm text-gray-500 mt-1">Share your knowledge with the community.</p>
+        <h1 className="text-3xl font-bold text-gray-900">{isEdit ? "Edit Post" : "Write a Post"}</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {isEdit ? "Update your article and save your changes." : "Share your knowledge with the community."}
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -140,7 +177,9 @@ const WritePostPage = () => {
             {isPending && (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             )}
-            {isPending ? "Publishing…" : "Publish Post"}
+            {isPending
+              ? (isEdit ? "Saving…" : "Publishing…")
+              : (isEdit ? "Save Changes" : "Publish Post")}
           </button>
           <button
             type="button"
