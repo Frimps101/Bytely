@@ -4,7 +4,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { SignedIn, SignedOut, useAuth, useUser } from "@clerk/clerk-react";
 import FeaturedPost from "../components/FeaturedPost";
 import ArticleCard, { SidePost } from "../components/ArticleCard";
-import { fetchPosts, fetchMyPosts, fetchSavedPosts, toCardPost } from "../lib/api";
+import { fetchPosts, fetchMyPosts, fetchSavedPostsFull, toCardPost } from "../lib/api";
 
 const PER_PAGE = 10;
 
@@ -90,10 +90,10 @@ const NoPostsEmpty = () => (
 const NoSavedEmpty = ({ onMyPosts }) => (
   <div className="flex flex-col items-center justify-center py-20 gap-6 text-center">
     <div className="relative">
-      <div className="w-24 h-24 rounded-2xl bg-amber-50 flex items-center justify-center">
+      <div className="w-24 h-24 rounded-2xl bg-blue-50 flex items-center justify-center">
         <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-          <path d="M10 6h24a2 2 0 012 2v30l-13-7-13 7V8a2 2 0 012-2z" fill="#fef3c7" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round"/>
-          <path d="M16 16h12M16 22h8" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round"/>
+          <path d="M10 6h24a2 2 0 012 2v30l-13-7-13 7V8a2 2 0 012-2z" fill="#dbeafe" stroke="#126ef5" strokeWidth="1.5" strokeLinejoin="round"/>
+          <path d="M16 16h12M16 22h8" stroke="#126ef5" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       </div>
       <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center">
@@ -108,7 +108,7 @@ const NoSavedEmpty = ({ onMyPosts }) => (
     </div>
     <button
       onClick={onMyPosts}
-      className="flex items-center gap-2 px-6 py-2.5 rounded-md bg-amber-400 text-white text-sm font-semibold hover:bg-amber-500 transition-colors"
+      className="flex items-center gap-2 px-6 py-2.5 rounded-md bg-[#126ef5] text-white text-sm font-semibold hover:bg-[#0f5fd4] transition-colors"
     >
       Browse posts
     </button>
@@ -143,9 +143,9 @@ const MyPostsTab = ({ token, username }) => {
 
 /* ── Saved tab ── */
 const SavedTab = ({ token, onMyPosts }) => {
-  const { data: savedIds = [], isLoading } = useQuery({
-    queryKey: ["saved-posts"],
-    queryFn: () => fetchSavedPosts({ token }),
+  const { data: posts = [], isLoading } = useQuery({
+    queryKey: ["saved-posts-full"],
+    queryFn: () => fetchSavedPostsFull({ token }),
     enabled: !!token,
     retry: false,
   });
@@ -156,23 +156,16 @@ const SavedTab = ({ token, onMyPosts }) => {
     </div>
   );
 
-  if (savedIds.length === 0) return <NoSavedEmpty onMyPosts={onMyPosts} />;
+  if (posts.length === 0) return <NoSavedEmpty onMyPosts={onMyPosts} />;
 
   return (
     <div className="mt-8">
       <p className="text-sm text-gray-500 mb-6">
-        {savedIds.length} saved {savedIds.length === 1 ? "post" : "posts"}
+        {posts.length} saved {posts.length === 1 ? "post" : "posts"}
       </p>
-      <div className="flex flex-col gap-4">
-        {savedIds.map((id) => (
-          <div key={id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:border-[#126ef5] transition-colors">
-            <Link to={`/post/${id}`} className="text-sm font-medium text-gray-800 hover:text-[#126ef5] transition-colors">
-              Post #{id}
-            </Link>
-            <Link to={`/post/${id}`} className="text-xs text-[#126ef5] font-semibold hover:underline">
-              Read →
-            </Link>
-          </div>
+      <div className="flex flex-col gap-8">
+        {posts.map((post) => (
+          <ArticleCard key={post.id} post={toCardPost(post)} />
         ))}
       </div>
     </div>
@@ -180,18 +173,8 @@ const SavedTab = ({ token, onMyPosts }) => {
 };
 
 /* ── Public feed (infinite scroll) ── */
-const PublicFeed = () => {
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
-  const [search, setSearch]                 = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+const PublicFeed = ({ search = "", category = null }) => {
   const sentinelRef = useRef(null);
-
-  const handleSearch = (e) => {
-    const val = e.target.value;
-    setSearch(val);
-    clearTimeout(window._searchTimer);
-    window._searchTimer = setTimeout(() => setDebouncedSearch(val), 500);
-  };
 
   const {
     data,
@@ -201,11 +184,11 @@ const PublicFeed = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["posts", activeCategory.value, debouncedSearch],
+    queryKey: ["posts", category, search],
     queryFn: ({ pageParam = 1 }) =>
       fetchPosts({
-        category: activeCategory.value,
-        search:   debouncedSearch || undefined,
+        category,
+        search:   search || undefined,
         page:     pageParam,
         limit:    PER_PAGE,
       }).then((res) => res.posts ?? []),

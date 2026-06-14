@@ -84,7 +84,11 @@ export const deletePost = async ({ id, token }) => {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error("Failed to delete post");
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message = typeof body === "string" ? body : body?.message;
+    throw new Error(message || `Failed to delete post (${res.status})`);
+  }
   return res.json();
 };
 
@@ -130,6 +134,14 @@ export const fetchSavedPosts = async ({ token }) => {
   return res.json();
 };
 
+export const fetchSavedPostsFull = async ({ token }) => {
+  const res = await fetch(`${API}/users/saved-posts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Failed to fetch saved posts");
+  return res.json();
+};
+
 export const toggleSavePost = async ({ postId, token }) => {
   const res = await fetch(`${API}/users/save`, {
     method: "PATCH",
@@ -139,6 +151,10 @@ export const toggleSavePost = async ({ postId, token }) => {
     },
     body: JSON.stringify({ postId }),
   });
-  if (!res.ok) throw new Error("Failed to save post");
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message = typeof body === "string" ? body : body?.message;
+    throw new Error(message || `Failed to save post (${res.status})`);
+  }
   return res.json();
 };

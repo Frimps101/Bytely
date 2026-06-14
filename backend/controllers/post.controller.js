@@ -109,19 +109,25 @@ export const deletePost = async (req, res) => {
         const { userId: clerkUserId, sessionClaims } = getAuth(req);
         if (!clerkUserId) return res.status(401).json("Not authenticated!");
 
+        const postId = parseInt(req.params.id);
+        if (!postId) return res.status(400).json("Post ID is required!");
+
         const role = sessionClaims?.metadata?.role || "user";
         const user = await prisma.user.findUnique({ where: { clerkUserId } });
 
-        if (role === "admin") {
-            await prisma.post.delete({ where: { id: parseInt(req.params.id) } });
-            return res.status(200).json("Post deleted successfully!");
+        const post = await prisma.post.findUnique({ where: { id: postId } });
+        if (!post) return res.status(404).json("Post not found!");
+
+        if (role !== "admin" && post.userId !== user?.id) {
+            return res.status(403).json("You can delete only your post!");
         }
 
-        const deleted = await prisma.post.deleteMany({
-            where: { id: parseInt(req.params.id), userId: user.id },
-        });
+        // Remove dependent comments first to satisfy the FK constraint.
+        await prisma.$transaction([
+            prisma.comment.deleteMany({ where: { postId } }),
+            prisma.post.delete({ where: { id: postId } }),
+        ]);
 
-        if (deleted.count === 0) return res.status(403).json("You can delete only your post!");
         res.status(200).json("Post deleted successfully!");
     } catch (error) {
         return res.status(500).json(error.message);

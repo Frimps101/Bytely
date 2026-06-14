@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth, useUser, SignedIn, SignedOut } from "@clerk/clerk-react";
-import { fetchPost, fetchComments, postComment } from "../lib/api";
+import { fetchPost, fetchComments, postComment, deletePost, fetchSavedPosts, toggleSavePost } from "../lib/api";
 
 const formatDate = (iso) =>
   new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
@@ -19,10 +19,14 @@ const Avatar = ({ src, username, size = "w-10 h-10" }) => (
 
 const PostDetailPage = () => {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const { getToken } = useAuth();
   const { user } = useUser();
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   const { data: post, isLoading, isError } = useQuery({
     queryKey: ["post", slug],
@@ -53,6 +57,42 @@ const PostDetailPage = () => {
     if (!commentText.trim()) return;
     addComment(commentText.trim());
   };
+
+  const { mutate: removePost, isPending: deleting } = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      return deletePost({ id: post.id, token });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+      queryClient.invalidateQueries({ queryKey: ["my-posts"] });
+      navigate("/");
+    },
+    onError: (err) => setDeleteError(err.message || "Could not delete the post."),
+  });
+
+  /* Saved state — only fetched when signed in */
+  const { data: savedIds = [] } = useQuery({
+    queryKey: ["saved-posts"],
+    queryFn: async () => fetchSavedPosts({ token: await getToken() }),
+    enabled: !!user,
+    retry: false,
+  });
+
+  const isSaved = !!post?.id && savedIds.includes(String(post.id));
+
+  const { mutate: toggleSave, isPending: saving } = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      return toggleSavePost({ postId: post.id, token });
+    },
+    onSuccess: () => {
+      setSaveError("");
+      queryClient.invalidateQueries({ queryKey: ["saved-posts"] });
+      queryClient.invalidateQueries({ queryKey: ["saved-posts-full"] });
+    },
+    onError: (err) => setSaveError(err.message || "Could not save the post."),
+  });
 
   /* Author check — mirrors the backend's username derivation */
   const myUsername =
@@ -96,6 +136,38 @@ const PostDetailPage = () => {
   return (
     <div className="pt-10 pb-16 space-y-10">
 
+      {/* DELETE CONFIRMATION MODAL */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">Delete this post?</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              This will permanently remove "<span className="font-medium text-gray-700">{post.title}</span>" and its comments. This action cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-md px-3 py-2">{deleteError}</p>
+            )}
+            <div className="flex items-center justify-end gap-3 pt-1">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-md bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => removePost()}
+                disabled={deleting}
+                className="flex items-center gap-2 px-4 py-2 rounded-md bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-60"
+              >
+                {deleting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* BREADCRUMB */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link to="/" className="hover:text-[#126ef5]">Home</Link>
@@ -135,17 +207,55 @@ const PostDetailPage = () => {
             </div>
           </div>
 
-          {isAuthor && (
-            <Link to={`/edit/${post.slug}`}>
-              <button className="flex items-center gap-2 px-4 py-2 rounded-md border border-gray-200 text-gray-700 text-sm font-semibold hover:border-[#126ef5] hover:text-[#126ef5] transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-                Edit
+          <div className="flex items-center gap-2">
+            <SignedIn>
+              <button
+                onClick={() => toggleSave()}
+                disabled={saving}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md border text-sm font-semibold transition-colors disabled:opacity-60 ${
+                  isSaved
+                    ? "border-[#126ef5] text-[#126ef5] bg-blue-50"
+                    : "border-gray-200 text-gray-700 hover:border-[#126ef5] hover:text-[#126ef5]"
+                }`}
+              >
+                {saving ? (
+                  <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                  </svg>
+                )}
+                {isSaved ? "Saved" : "Save"}
               </button>
-            </Link>
-          )}
+            </SignedIn>
+
+            {isAuthor && (
+              <>
+                <Link to={`/edit/${post.slug}`}>
+                  <button className="flex items-center gap-2 px-4 py-2 rounded-md border border-gray-200 text-gray-700 text-sm font-semibold hover:border-[#126ef5] hover:text-[#126ef5] transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                    Edit
+                  </button>
+                </Link>
+                <button
+                  onClick={() => { setDeleteError(""); setConfirmDelete(true); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md border border-gray-200 text-gray-700 text-sm font-semibold hover:border-red-500 hover:text-red-500 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
+
+        {saveError && (
+          <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-md px-3 py-2">{saveError}</p>
+        )}
       </div>
 
       <hr className="border-gray-100" />
