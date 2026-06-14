@@ -1,5 +1,32 @@
 const API = "http://localhost:3000";
 
+/* ── Display helpers ── */
+
+// Converts stored HTML (from the Quill editor) into clean plain text,
+// decoding entities like &nbsp; and collapsing whitespace.
+export const htmlToText = (html = "") => {
+  if (typeof document === "undefined") {
+    return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  }
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return (doc.body.textContent || "").replace(/\s+/g, " ").trim();
+};
+
+// Normalizes a backend post into the shape the cards expect
+// (author, timeAgo, plain-text excerpt).
+export const toCardPost = (post) => ({
+  ...post,
+  slug: post.slug,
+  title: post.title,
+  category: post.category,
+  img: post.img,
+  author: post.user?.username ?? post.author ?? "Unknown",
+  timeAgo: post.createdAt
+    ? new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : post.timeAgo ?? "",
+  excerpt: htmlToText(post.desc ?? post.excerpt ?? "").slice(0, 180),
+});
+
 /* ── Posts ── */
 
 export const fetchPosts = async ({ page = 1, limit = 10, category, search, sort } = {}) => {
@@ -27,7 +54,28 @@ export const createPost = async ({ data, token }) => {
     },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to create post");
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message = typeof body === "string" ? body : body?.message;
+    throw new Error(message || `Failed to create post (${res.status})`);
+  }
+  return res.json();
+};
+
+export const updatePost = async ({ id, data, token }) => {
+  const res = await fetch(`${API}/posts/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message = typeof body === "string" ? body : body?.message;
+    throw new Error(message || `Failed to update post (${res.status})`);
+  }
   return res.json();
 };
 

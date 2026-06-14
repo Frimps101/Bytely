@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth, SignedIn, SignedOut } from "@clerk/clerk-react";
+import { useAuth, useUser, SignedIn, SignedOut } from "@clerk/clerk-react";
 import { fetchPost, fetchComments, postComment } from "../lib/api";
 
 const formatDate = (iso) =>
@@ -20,6 +20,7 @@ const Avatar = ({ src, username, size = "w-10 h-10" }) => (
 const PostDetailPage = () => {
   const { slug } = useParams();
   const { getToken } = useAuth();
+  const { user } = useUser();
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState("");
 
@@ -52,6 +53,11 @@ const PostDetailPage = () => {
     if (!commentText.trim()) return;
     addComment(commentText.trim());
   };
+
+  /* Author check — mirrors the backend's username derivation */
+  const myUsername =
+    user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || null;
+  const isAuthor = !!post?.user?.username && post.user.username === myUsername;
 
   /* ── Loading ── */
   if (isLoading) return (
@@ -120,12 +126,25 @@ const PostDetailPage = () => {
           {post.title}
         </h1>
 
-        <div className="flex items-center gap-3 pt-1">
-          <Avatar src={post.user?.img} username={post.user?.username} />
-          <div>
-            <p className="text-sm font-semibold text-gray-900">{post.user?.username}</p>
-            <p className="text-xs text-gray-400">Author</p>
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <div className="flex items-center gap-3">
+            <Avatar src={post.user?.img} username={post.user?.username} />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">{post.user?.username}</p>
+              <p className="text-xs text-gray-400">Author</p>
+            </div>
           </div>
+
+          {isAuthor && (
+            <Link to={`/edit/${post.slug}`}>
+              <button className="flex items-center gap-2 px-4 py-2 rounded-md border border-gray-200 text-gray-700 text-sm font-semibold hover:border-[#126ef5] hover:text-[#126ef5] transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+                Edit
+              </button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -133,7 +152,7 @@ const PostDetailPage = () => {
 
       {/* CONTENT */}
       <div
-        className="prose prose-gray max-w-none prose-headings:font-bold prose-a:text-[#126ef5] prose-img:rounded-lg prose-code:text-sm"
+        className="prose prose-gray max-w-none break-words prose-headings:font-bold prose-a:text-[#126ef5] prose-a:break-words prose-img:rounded-lg prose-img:max-w-full prose-pre:overflow-x-auto prose-pre:max-w-full prose-code:text-sm"
         dangerouslySetInnerHTML={{ __html: post.desc }}
       />
 

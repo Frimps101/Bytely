@@ -3,6 +3,7 @@ import {
   getPosts,
   getPost,
   createPost,
+  updatePost,
   deletePost,
   uploadAuth,
   featurePost,
@@ -16,6 +17,7 @@ router.get("/upload-auth", uploadAuth);
 router.get("/", getPosts);
 router.get("/:slug", increaseVisit, getPost);
 router.post("/", createPost);
+router.put("/:id", updatePost);
 router.delete("/:id", deletePost);
 router.patch("/feature", featurePost);
 
