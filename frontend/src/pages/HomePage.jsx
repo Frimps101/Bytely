@@ -180,18 +180,8 @@ const SavedTab = ({ token, onMyPosts }) => {
 };
 
 /* ── Public feed (infinite scroll) ── */
-const PublicFeed = () => {
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
-  const [search, setSearch]                 = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+const PublicFeed = ({ search = "", category = null }) => {
   const sentinelRef = useRef(null);
-
-  const handleSearch = (e) => {
-    const val = e.target.value;
-    setSearch(val);
-    clearTimeout(window._searchTimer);
-    window._searchTimer = setTimeout(() => setDebouncedSearch(val), 500);
-  };
 
   const {
     data,
@@ -201,11 +191,11 @@ const PublicFeed = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["posts", activeCategory.value, debouncedSearch],
+    queryKey: ["posts", category, search],
     queryFn: ({ pageParam = 1 }) =>
       fetchPosts({
-        category: activeCategory.value,
-        search:   debouncedSearch || undefined,
+        category,
+        search:   search || undefined,
         page:     pageParam,
         limit:    PER_PAGE,
       }).then((res) => res.posts ?? []),
